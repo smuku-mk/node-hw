@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import mongoose from "mongoose";
 import router from "./api/index.js";
+import "dotenv/config";
 
 const app = express();
 app.use(cors());
@@ -19,10 +20,7 @@ app.use((err, req, res, next) => {
 
 const connection = async () => {
   try {
-    await mongoose.connect(
-      "mongodb+srv://smuku:michcu@cluster0.a9vnuyl.mongodb.net/admin?retryWrites=true&loadBalanced=false&replicaSet=atlas-egfauu-shard-0&readPreference=primary&srvServiceName=mongodb&connectTimeoutMS=10000&authSource=admin&authMechanism=SCRAM-SHA-1",
-      { dbName: "db-contacts" }
-    );
+    await mongoose.connect(process.env.MONGODB_URI, { dbName: "db-contacts" });
     console.log("Database connection successful");
 
     app.listen(3000, () => {
