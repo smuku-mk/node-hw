@@ -1,16 +1,14 @@
 import jwt from "jsonwebtoken";
 import Joi from "joi";
 import passport from "passport";
-import { User } from "./schema.js";
+import gravatar from "gravatar";
+import jimp from "jimp";
+import path from "path";
+import fs from "fs/promises";
+import User from "./schema.js";
 
 const addUserSchema = Joi.object({
-  password: Joi.string()
-    .pattern(/^(?=.*[A-Za-z])(?=.*\d)(?=.*[@$!%*#?&])[A-Za-z\d@$!%*#?&]{8,}$/)
-    .required()
-    .messages({
-      "string.pattern.base":
-        "Password must contain at least 8 characters, one uppercase letter, one digit, and one special character.",
-    }),
+  password: Joi.string().required(),
   email: Joi.string().email().required(),
 });
 
@@ -66,7 +64,8 @@ export const signup = async (req, res, next) => {
   }
 
   try {
-    const newUser = new User({ email, subscription });
+    const avatarURL = gravatar.url(email, { s: "100", d: "retro" });
+    const newUser = new User({ email, subscription, avatarURL });
     newUser.setPassword(password);
     await newUser.save();
     res.json({
@@ -76,6 +75,7 @@ export const signup = async (req, res, next) => {
         user: {
           email: newUser.email,
           subscription: newUser.subscription,
+          avatarURL: newUser.avatarURL,
         },
       },
     });
@@ -146,20 +146,20 @@ export const logout = async (req, res) => {
   }
 };
 
-export const current = (req, res) => {
-  const getUser = async (id) => {
-    try {
-      const user = await User.findById(id);
-      if (!user) {
-        return null;
-      } else {
-        return user;
-      }
-    } catch (error) {
-      console.log(error);
+const getUser = async (id) => {
+  try {
+    const user = await User.findById(id);
+    if (!user) {
+      return null;
+    } else {
+      return user;
     }
-  };
+  } catch (error) {
+    console.log(error);
+  }
+};
 
+export const current = (req, res) => {
   const { email, subscription } = req.user;
 
   try {
@@ -180,6 +180,43 @@ export const current = (req, res) => {
           email,
           subscription,
         },
+      });
+    }
+  } catch (error) {
+    console.error(error);
+  }
+};
+
+const storeAvatar = path.join(process.cwd(), "public/avatars");
+
+export const avatar = async (req, res, next) => {
+  const { path: temporaryName, originalname } = req.file;
+  const newAvatarFileName = `${req.user._id.toString()}.jpg`;
+  const newAvatarPath = path.join(storeAvatar, newAvatarFileName);
+  newAvatarPath;
+  try {
+    const avatar = await jimp.read(temporaryName);
+    avatar.cover(250, 250).quality(60).write(newAvatarPath);
+    await fs.unlink(temporaryName);
+  } catch (err) {
+    return next(err);
+  }
+
+  try {
+    const id = req.user.id;
+    const user = getUser(id);
+    if (!user) {
+      return res.json({
+        status: "Unauthorized",
+        code: 401,
+        message: `Unauthorized`,
+      });
+    } else {
+      user.avatarURL = `/avatars/${newAvatarFileName}`;
+      return res.json({
+        status: "OK",
+        code: 200,
+        data: { avatarURL: user.avatarURL },
       });
     }
   } catch (error) {
