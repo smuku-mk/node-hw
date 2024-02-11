@@ -6,9 +6,14 @@ import jimp from "jimp";
 import path from "path";
 import fs from "fs/promises";
 import User from "./schema.js";
+import { sendVerificationEmail, verificationToken } from "./nodemailer.js";
 
 const addUserSchema = Joi.object({
   password: Joi.string().required(),
+  email: Joi.string().email().required(),
+});
+
+const addEmailSchema = Joi.object({
   email: Joi.string().email().required(),
 });
 
@@ -59,15 +64,20 @@ export const signup = async (req, res, next) => {
     return res.json({
       status: "Bad Request",
       code: 400,
-      message: "validation error",
+      message: "Validation error",
     });
   }
 
   try {
-    const avatarURL = gravatar.url(email, { s: "100", d: "retro" });
+    const avatarURL = gravatar.url(email);
     const newUser = new User({ email, subscription, avatarURL });
     newUser.setPassword(password);
+    newUser.verificationToken = verificationToken();
     await newUser.save();
+    sendVerificationEmail({
+      email,
+      verificationToken: newUser.verificationToken,
+    });
     res.json({
       status: "Created",
       code: 201,
@@ -76,6 +86,7 @@ export const signup = async (req, res, next) => {
           email: newUser.email,
           subscription: newUser.subscription,
           avatarURL: newUser.avatarURL,
+          password: newUser.password
         },
       },
     });
@@ -95,7 +106,6 @@ export const login = async (req, res, next) => {
       message: "User not found",
     });
   }
-
   if (!user || !user.validPassword(password)) {
     return res.json({
       status: "Unauthorized",
@@ -103,6 +113,14 @@ export const login = async (req, res, next) => {
       message: "Email or password is wrong",
     });
   }
+  if (!user.verify) {
+    return res.json({
+      status: "Unauthorized",
+      code: 401,
+      message: "Email is not verified",
+    });
+  }
+
   try {
     const payload = {
       id: user.id,
@@ -221,5 +239,83 @@ export const avatar = async (req, res, next) => {
     }
   } catch (error) {
     console.error(error);
+  }
+};
+
+export const verification = async (req, res, next) => {
+  try {
+    const { verificationToken } = req.params;
+    const user = await User.findOne({ verificationToken });
+
+    if (!user) {
+      return res.json({
+        status: "Not Found",
+        code: 404,
+        message: "User not found",
+      });
+    }
+
+    await User.findByIdAndUpdate(user._id, {
+      verificationToken: "",
+      verify: true,
+    });
+    res.json({
+      status: "OK",
+      code: 200,
+      message: "Verification successful",
+    });
+  } catch (err) {
+    res.json({
+      status: "Internal Server Error",
+      code: 500,
+      message: "Verification process failed",
+    });
+  }
+};
+
+export const sendEmailAgain = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.json({
+        status: "Not Found",
+        code: 404,
+        message: "User not found",
+      });
+    }
+
+    const { error } = addEmailSchema.validate(req.body);
+    if (error) {
+      return res.json({
+        status: "Bad Request",
+        code: 400,
+        message: "validation error",
+      });
+    }
+
+    if (user.verify) {
+      return res.json({
+        status: "Bad Request",
+        code: 400,
+        message: "Verification has already been passed",
+      });
+    }
+
+    sendVerificationEmail({
+      email,
+      verificationToken: user.verificationToken,
+    });
+    res.json({
+      status: "OK",
+      code: 200,
+      message: "Verification email sent",
+    });
+  } catch (err) {
+    res.json({
+      status: "Internal Server Error",
+      code: 500,
+      message: "Email Sending Failure",
+    });
   }
 };

@@ -9,5 +9,7 @@ router.post("/login", ctrlUser.login);
 router.get("/logout", ctrlUser.auth, ctrlUser.logout);
 router.get("/current", ctrlUser.auth, ctrlUser.current);
 router.patch("/avatars", ctrlUser.auth, upload.single("avatar"), ctrlUser.avatar);
+router.get("/verify/:verificationToken", ctrlUser.verification);
+router.post("/verify", ctrlUser.sendEmailAgain);
 
 export default router;
